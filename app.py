@@ -1,49 +1,35 @@
-import streamlit as st
-from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
-import torch
+import gradio as gr
+from transformers import pipeline
 
-st.set_page_config(page_title="AI vs Human Detector", page_icon="🤖", layout="centered")
+classifier = pipeline(
+    "text-classification",
+    model="model",
+    tokenizer="model",
+    return_all_scores=True
+)
 
-# CSS (small)
-st.markdown("""
-<style>
-body { background-color: #0f1724; color: #e6eef5; }
-.stButton>button { background: linear-gradient(90deg,#6366f1,#8b5cf6); color: white; border-radius: 8px; padding: 8px 20px; }
-textarea { background-color: #0b1220; color: #e6eef5; border-radius:8px; padding:10px; }
-.result { padding:16px; border-radius:10px; margin-top:12px; }
-</style>
-""", unsafe_allow_html=True)
+def detect_ai(text):
+    preds = classifier(text)[0]
+    ai_score = preds[1]["score"]
+    human_score = preds[0]["score"]
 
-st.title("🤖 AI vs Human Text Detector")
-st.write("Fine-tuned DistilBERT — probability + label")
-
-MODEL_DIR = "./model"
-
-@st.cache_resource
-def load_pipeline(model_dir=MODEL_DIR):
-    device = 0 if torch.cuda.is_available() else -1
-    pipe = pipeline("text-classification", model=model_dir, tokenizer=model_dir, device=device, return_all_scores=False)
-    return pipe
-
-pipe = load_pipeline()
-
-text = st.text_area("Enter text to analyze:", height=240)
-
-if st.button("Analyze"):
-    if not text.strip():
-        st.warning("Please enter text to analyze.")
+    if ai_score > human_score:
+        label = "AI-Generated"
     else:
-        with st.spinner("Analyzing..."):
-            out = pipe(text)
-            # pipeline returns [{'label':'LABEL_0' or 'LABEL_1', 'score':0.xx}]
-            label = out[0]["label"]
-            score = out[0]["score"]
-            # By default HF labels for binaries are LABEL_0 / LABEL_1; check mapping
-            # We'll assume LABEL_1 corresponds to class 1 (AI)
-            is_ai = (label == "LABEL_1")
-            pct = round(score * 100, 2)
+        label = "Human-Written"
 
-        if is_ai:
-            st.markdown(f"<div class='result' style='background:#2b0a0a; color:#ffd6d6;'><h3>🤖 AI-Generated</h3><p>Confidence: <b>{pct}%</b></p></div>", unsafe_allow_html=True)
-        else:
-            st.markdown(f"<div class='result' style='background:#07220a; color:#bfffd0;'><h3>🧑 Human-Written</h3><p>Confidence: <b>{pct}%</b></p></div>", unsafe_allow_html=True)
+    return {
+        "Prediction": label,
+        "AI Probability": round(ai_score, 3),
+        "Human Probability": round(human_score, 3),
+    }
+
+ui = gr.Interface(
+    fn=detect_ai,
+    inputs=gr.Textbox(lines=7, label="Enter text"),
+    outputs="json",
+    title="AI Text Detector (DistilBERT)",
+    description="Detect whether text is AI-generated or human-written with a fine-tuned DistilBERT model."
+)
+
+ui.launch()
