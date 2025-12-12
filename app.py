@@ -1,94 +1,49 @@
 import streamlit as st
-from transformers import pipeline
+from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
 import torch
 
-# ----------------------------------
-# PAGE CONFIG
-# ----------------------------------
-st.set_page_config(
-    page_title="AI vs Human Text Detector",
-    page_icon="🤖",
-    layout="centered",
-)
+st.set_page_config(page_title="AI vs Human Detector", page_icon="🤖", layout="centered")
 
-# ----------------------------------
-# CUSTOM DARK THEME CSS
-# ----------------------------------
-dark_css = """
+# CSS (small)
+st.markdown("""
 <style>
-body {
-    background-color: #0E1117;
-    color: white;
-}
-
-textarea, input {
-    background-color: #1E1E1E !important;
-    color: white !important;
-}
-
-.stButton>button {
-    background-color: #4CAF50;
-    color: white;
-    border-radius: 8px;
-    padding: 0.6rem;
-}
-
-.result-box {
-    padding: 20px;
-    border-radius: 10px;
-    margin-top: 20px;
-}
+body { background-color: #0f1724; color: #e6eef5; }
+.stButton>button { background: linear-gradient(90deg,#6366f1,#8b5cf6); color: white; border-radius: 8px; padding: 8px 20px; }
+textarea { background-color: #0b1220; color: #e6eef5; border-radius:8px; padding:10px; }
+.result { padding:16px; border-radius:10px; margin-top:12px; }
 </style>
-"""
-st.markdown(dark_css, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-# ----------------------------------
-# HEADER
-# ----------------------------------
 st.title("🤖 AI vs Human Text Detector")
-st.write("Detect whether the text was written by **AI or Human** using a fine-tuned DistilBERT model.")
+st.write("Fine-tuned DistilBERT — probability + label")
 
-# ----------------------------------
-# LOAD MODEL PIPELINE
-# ----------------------------------
+MODEL_DIR = "./model"
+
 @st.cache_resource
-def load_model():
-    return pipeline(
-        "text-classification",
-        model="./ai_detector_model",
-        tokenizer="./ai_detector_model",
-        device=0 if torch.cuda.is_available() else -1
-    )
+def load_pipeline(model_dir=MODEL_DIR):
+    device = 0 if torch.cuda.is_available() else -1
+    pipe = pipeline("text-classification", model=model_dir, tokenizer=model_dir, device=device, return_all_scores=False)
+    return pipe
 
-classifier = load_model()
+pipe = load_pipeline()
 
-# ----------------------------------
-# INPUT BOX
-# ----------------------------------
-text = st.text_area("Enter text to analyze:", height=200)
+text = st.text_area("Enter text to analyze:", height=240)
 
-if st.button("Analyze Text"):
+if st.button("Analyze"):
     if not text.strip():
-        st.warning("Please enter some text!")
+        st.warning("Please enter text to analyze.")
     else:
         with st.spinner("Analyzing..."):
-            result = classifier(text)[0]
-            label = result["label"]
-            score = round(result["score"] * 100, 2)
-
-        is_ai = label == "LABEL_1"
+            out = pipe(text)
+            # pipeline returns [{'label':'LABEL_0' or 'LABEL_1', 'score':0.xx}]
+            label = out[0]["label"]
+            score = out[0]["score"]
+            # By default HF labels for binaries are LABEL_0 / LABEL_1; check mapping
+            # We'll assume LABEL_1 corresponds to class 1 (AI)
+            is_ai = (label == "LABEL_1")
+            pct = round(score * 100, 2)
 
         if is_ai:
-            st.markdown(
-                f"<div class='result-box' style='background-color:#8B0000;'>"
-                f"<h3>🤖 Prediction: AI-Generated Text</h3>"
-                f"<p>Confidence: <b>{score}%</b></p>"
-                "</div>", unsafe_allow_html=True
-            )
+            st.markdown(f"<div class='result' style='background:#2b0a0a; color:#ffd6d6;'><h3>🤖 AI-Generated</h3><p>Confidence: <b>{pct}%</b></p></div>", unsafe_allow_html=True)
         else:
-            st.markdown(
-                f"<div class='result-box' style='background-color:#004d00;'>"
-                f"<h3>🧑 Human-Written Text</h3>"
-                f"<p>Confidence: <b>{score}%</b></p>"
-                "</div>", unsafe_allow_html=True
-            )
+            st.markdown(f"<div class='result' style='background:#07220a; color:#bfffd0;'><h3>🧑 Human-Written</h3><p>Confidence: <b>{pct}%</b></p></div>", unsafe_allow_html=True)
